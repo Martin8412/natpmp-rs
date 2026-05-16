@@ -121,10 +121,10 @@ fn main() -> Result<()> {
 
         // Print just the port number to stdout for easy scripting.
         println!("{public_port}");
-        if let Some(ref path) = cli.port_file {
-            if let Err(e) = std::fs::write(path, format!("{public_port}\n")) {
-                eprintln!("warning: could not write port file {}: {e:#}", path.display());
-            }
+        if let Some(ref path) = cli.port_file
+            && let Err(e) = std::fs::write(path, format!("{public_port}\n"))
+        {
+            eprintln!("warning: could not write port file {}: {e:#}", path.display());
         }
         eprintln!("mapped: private {private_port} → public {public_port} (lifetime {lifetime}s)");
 
