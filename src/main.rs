@@ -6,6 +6,7 @@ mod natpmp;
 mod qbt;
 
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
@@ -46,6 +47,16 @@ struct Cli {
     /// qBittorrent password
     #[arg(long, env = "QBT_PASS", default_value = "adminadmin")]
     qbt_pass: String,
+
+    /// Map the port once, print it to stdout, and exit (no renewal loop).
+    #[arg(long)]
+    once: bool,
+
+    /// Write the current public port number to this file on every successful
+    /// renewal. Other processes can read the file to discover the port without
+    /// having to parse stdout of a long-running daemon.
+    #[arg(long)]
+    port_file: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -110,6 +121,11 @@ fn main() -> Result<()> {
 
         // Print just the port number to stdout for easy scripting.
         println!("{public_port}");
+        if let Some(ref path) = cli.port_file {
+            if let Err(e) = std::fs::write(path, format!("{public_port}\n")) {
+                eprintln!("warning: could not write port file {}: {e:#}", path.display());
+            }
+        }
         eprintln!("mapped: private {private_port} → public {public_port} (lifetime {lifetime}s)");
 
         if let Some(ref qbt) = qbt {
@@ -117,6 +133,10 @@ fn main() -> Result<()> {
                 Ok(()) => eprintln!("qBittorrent listen port set to {public_port}"),
                 Err(e) => eprintln!("warning: qBittorrent update failed: {e:#}"),
             }
+        }
+
+        if cli.once {
+            return Ok(());
         }
 
         // Renew well before the mapping expires.

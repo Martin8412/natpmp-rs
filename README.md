@@ -4,9 +4,9 @@ Keeps a ProtonVPN port-forwarding lease alive and optionally syncs the assigned 
 qBittorrent.
 
 ProtonVPN's P2P servers expose a NAT-PMP gateway at `10.2.0.1`. This tool requests a
-forwarded port, renews the lease every 50 seconds before it expires, and prints the
-current public port to stdout on each renewal. If qBittorrent integration is enabled,
-qBittorrent's listening port is updated automatically.
+forwarded port, renews the lease before it expires, and prints the current public port
+to stdout on each renewal. If qBittorrent integration is enabled, qBittorrent's
+listening port is updated automatically.
 
 ## Requirements
 
@@ -50,21 +50,31 @@ To find the VPN interface name:
 | macOS | `ifconfig` | a `utun` interface added when the VPN connected |
 | Windows | `ipconfig` | the ProtonVPN adapter, e.g. `ProtonVPN` |
 
-Example output:
+All status messages go to **stderr**; only the bare port number is written to **stdout**
+on each renewal. Running the tool interactively you will see both streams:
 
 ```
-gateway: 10.2.0.1
-public address: 185.x.x.x
-mapped: private 12345 → public 54321 (lifetime 60s)
-renewing in 50s
+gateway: 10.2.0.1          <- stderr
+public address: 185.x.x.x  <- stderr
+mapped: private 12345 → public 54321 (lifetime 60s)  <- stderr
+54321                       <- stdout
+renewing in 50s             <- stderr
 ```
 
-The public port is written to **stdout**; all other output goes to **stderr**. This makes
-it easy to capture the port in a script:
+### Scripting
+
+Use `--port-file` to have the daemon write the current port to a file on every renewal.
+Other processes can read the file at any time without having to parse daemon output:
 
 ```
-port=$(natpmp --gateway 10.2.0.1 --interface proton0 2>/dev/null | head -1)
+natpmp --gateway 10.2.0.1 --interface proton0 --port-file /run/natpmp.port
+# elsewhere:
+port=$(cat /run/natpmp.port)
 ```
+
+`--once` maps the port once, prints it to stdout, and exits without starting the renewal
+loop. Useful for testing or short-lived connections where you will discard the mapping
+before it expires.
 
 ### With qBittorrent
 
@@ -91,7 +101,9 @@ natpmp --gateway 10.2.0.1 --interface proton0
       --lifetime <SECS>  Mapping lifetime in seconds [default: 60]
       --qbt-url <URL>    qBittorrent Web UI URL [env: QBT_URL]
       --qbt-user <USER>  qBittorrent username [default: admin] [env: QBT_USER]
-      --qbt-pass <PASS>  qBittorrent password [env: QBT_PASS]
+      --qbt-pass <PASS>  qBittorrent password [default: adminadmin] [env: QBT_PASS]
+      --port-file <PATH> Write the current public port to this file on each renewal
+      --once             Map once, print the port, and exit
   -h, --help             Print help
 ```
 
@@ -123,13 +135,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now natpmp@proton0
 ```
 
-Replace `proton0` with your actual VPN interface name.
+Replace `proton0` with your actual VPN interface name. The credentials file is
+owned by root (mode 600); systemd reads it before dropping to the `nobody` user.
 
-**4. Check status.**
+**3. Check status.**
 
 ```
-systemctl status natpmp
-journalctl -u natpmp -f
+systemctl status natpmp@proton0
+journalctl -u natpmp@proton0 -f
 ```
 
 The service runs as `nobody` and requires no elevated privileges on Linux ≥ 5.7.
@@ -141,7 +154,7 @@ cargo build --release
 ```
 
 Cross-compile for all default targets (requires [`cross`](https://github.com/cross-rs/cross)
-and Docker for Linux/Windows targets):
+and Docker for Linux and Windows targets):
 
 ```
 ./build.sh                 # all default targets
@@ -149,3 +162,10 @@ and Docker for Linux/Windows targets):
 ```
 
 See the top of `build.sh` for the full target list and notes on FreeBSD.
+
+## Credits
+
+This project is a Rust implementation of the [NAT-PMP](https://www.rfc-editor.org/rfc/rfc6886)
+protocol, based on the original [libnatpmp](http://miniupnp.free.fr/libnatpmp.html) C library
+by Thomas Bernard. The translation from C to Rust was done with the assistance of
+[Claude](https://claude.ai) (Anthropic).
