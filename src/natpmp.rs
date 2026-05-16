@@ -83,7 +83,12 @@ impl NatpmpClient {
                     }
                     Ok(_) => break, // too short — treat as a failed attempt
                     Err(e) if is_timeout(&e) => break,
-                    Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {
+                    // ConnectionRefused = Linux/macOS ICMP port-unreachable.
+                    // ConnectionReset   = Windows WSAECONNRESET (10054) for UDP to a closed port.
+                    Err(e) if matches!(
+                        e.kind(),
+                        io::ErrorKind::ConnectionRefused | io::ErrorKind::ConnectionReset
+                    ) => {
                         let gw = self.gateway;
                         bail!(
                             "{gw} is not a NAT-PMP server or the VPN is not connected \
