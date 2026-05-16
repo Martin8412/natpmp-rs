@@ -40,7 +40,7 @@ jobs:
         run: rustup update nightly && rustup default nightly
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        run: cargo install cargo-fuzz
 
       - name: Fuzz parse_natpmp_response
         run: cargo fuzz run parse_natpmp_response -- -max_total_time=30
