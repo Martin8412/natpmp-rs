@@ -375,7 +375,7 @@ fn interface_ipv4(iface: &str) -> Result<Ipv4Addr> {
     for _ in 0..4 {
         // Allocate as u64 to guarantee the 8-byte alignment required by
         // IP_ADAPTER_ADDRESSES_LH; buf_len is still tracked in bytes.
-        let mut buf: Vec<u64> = vec![0u64; (buf_len as usize + 7) / 8];
+        let mut buf: Vec<u64> = vec![0u64; (buf_len as usize).div_ceil(8)];
         let ret = unsafe {
             GetAdaptersAddresses(
                 u32::from(AF_INET),
