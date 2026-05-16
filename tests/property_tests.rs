@@ -250,6 +250,10 @@ proptest! {
 // ── qBittorrent properties ────────────────────────────────────────────────────
 
 proptest! {
+    // Each case spawns a TcpListener thread that lives until the process exits.
+    // Cap at 50 to avoid exhausting the OS thread limit on CI runners.
+    #![proptest_config(ProptestConfig::with_cases(50))]
+
     /// For every possible port value, the setPreferences request body must
     /// contain that port number as a decimal integer.
     #[test]
