@@ -2,6 +2,8 @@ use std::net::Ipv4Addr;
 
 use anyhow::{Context, Result, bail};
 
+/// # Errors
+/// Returns an error if `/proc/net/route` cannot be read or contains no default route.
 #[cfg(target_os = "linux")]
 pub fn default_gateway() -> Result<Ipv4Addr> {
     let content = std::fs::read_to_string("/proc/net/route").context("read /proc/net/route")?;
@@ -37,10 +39,27 @@ pub fn parse_proc_net_route(content: &str) -> Result<Ipv4Addr> {
     bail!("no default route found")
 }
 
+/// # Errors
+/// Returns an error if the routing socket cannot be opened, the route query fails,
+/// or no default IPv4 route is found.
+///
+/// # Panics
+/// Panics if the platform defines `RTM_VERSION`, `RTM_GET`, `AF_INET`, or
+/// `sockaddr_in` with values that don't fit their expected field widths — which
+/// cannot happen on any supported platform.
 #[cfg(any(target_os = "macos", target_os = "freebsd"))]
 pub fn default_gateway() -> Result<Ipv4Addr> {
     use std::io;
     use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd};
+
+    // A routing message is a rt_msghdr followed by the sockaddrs flagged in
+    // rtm_addrs, packed in RTA bit order. Sending RTA_DST = 0.0.0.0 queries
+    // the default route.
+    #[repr(C)]
+    struct Msg {
+        hdr: libc::rt_msghdr,
+        dst: libc::sockaddr_in,
+    }
 
     // AF_ROUTE + SOCK_RAW gives direct access to the kernel routing table.
     let sock: OwnedFd = unsafe {
@@ -54,24 +73,15 @@ pub fn default_gateway() -> Result<Ipv4Addr> {
     let pid = unsafe { libc::getpid() };
     let seq: libc::c_int = 1;
 
-    // A routing message is a rt_msghdr followed by the sockaddrs flagged in
-    // rtm_addrs, packed in RTA bit order. Sending RTA_DST = 0.0.0.0 queries
-    // the default route.
-    #[repr(C)]
-    struct Msg {
-        hdr: libc::rt_msghdr,
-        dst: libc::sockaddr_in,
-    }
-
     let mut msg: Msg = unsafe { std::mem::zeroed() };
-    msg.hdr.rtm_msglen = std::mem::size_of::<Msg>() as libc::c_ushort;
-    msg.hdr.rtm_version = libc::RTM_VERSION as libc::c_uchar;
-    msg.hdr.rtm_type = libc::RTM_GET as libc::c_uchar;
+    msg.hdr.rtm_msglen = u16::try_from(std::mem::size_of::<Msg>()).expect("Msg fits u16");
+    msg.hdr.rtm_version = u8::try_from(libc::RTM_VERSION).expect("RTM_VERSION fits u8");
+    msg.hdr.rtm_type = u8::try_from(libc::RTM_GET).expect("RTM_GET fits u8");
     msg.hdr.rtm_addrs = libc::RTA_DST;
     msg.hdr.rtm_seq = seq;
     msg.hdr.rtm_pid = pid;
-    msg.dst.sin_len = std::mem::size_of::<libc::sockaddr_in>() as u8;
-    msg.dst.sin_family = libc::AF_INET as u8;
+    msg.dst.sin_len = u8::try_from(std::mem::size_of::<libc::sockaddr_in>()).expect("sockaddr_in fits u8");
+    msg.dst.sin_family = u8::try_from(libc::AF_INET).expect("AF_INET fits u8");
     // sin_addr = INADDR_ANY (0.0.0.0) — requests the default route
 
     let ret = unsafe {
@@ -99,13 +109,14 @@ pub fn default_gateway() -> Result<Ipv4Addr> {
         if n < 0 {
             return Err(io::Error::last_os_error()).context("read routing socket");
         }
-        let n = n as usize;
+        let n = n.cast_unsigned();
         if n < std::mem::size_of::<libc::rt_msghdr>() {
             continue;
         }
 
         // Safety: length checked above; rt_msghdr has no invalid bit patterns.
-        let hdr = unsafe { &*(buf.as_ptr() as *const libc::rt_msghdr) };
+        let hdr: libc::rt_msghdr =
+            unsafe { std::ptr::read_unaligned(buf.as_ptr().cast()) };
 
         if hdr.rtm_pid != pid || hdr.rtm_seq != seq {
             continue;
@@ -138,7 +149,7 @@ fn gateway_from_rtaddrs(addrs: libc::c_int, data: &[u8]) -> Result<Ipv4Addr> {
 
         if rta_flag == libc::RTA_GATEWAY {
             let sa_family = if offset + 1 < data.len() { data[offset + 1] } else { 0 };
-            if sa_family != libc::AF_INET as u8 {
+            if sa_family != u8::try_from(libc::AF_INET).expect("AF_INET fits u8") {
                 bail!("default gateway is not IPv4 (sa_family={sa_family})");
             }
             if sa_len < std::mem::size_of::<libc::sockaddr_in>()
@@ -146,10 +157,9 @@ fn gateway_from_rtaddrs(addrs: libc::c_int, data: &[u8]) -> Result<Ipv4Addr> {
             {
                 bail!("RTA_GATEWAY sockaddr is truncated");
             }
-            // Safety: length and family checked above; the stack buffer is
-            // sufficiently aligned for sockaddr_in (≤4-byte alignment needed).
-            let sin =
-                unsafe { &*(data.as_ptr().add(offset) as *const libc::sockaddr_in) };
+            // Safety: bounds checked above; sockaddr_in has no invalid bit patterns.
+            let sin: libc::sockaddr_in =
+                unsafe { std::ptr::read_unaligned(data.as_ptr().add(offset).cast()) };
             // s_addr is in network byte order; to_ne_bytes() yields the octets
             // as they sit in memory, which is what Ipv4Addr::from([u8; 4]) expects.
             return Ok(Ipv4Addr::from(sin.sin_addr.s_addr.to_ne_bytes()));
@@ -173,6 +183,8 @@ fn sa_roundup(len: usize) -> usize {
     (len + align - 1) & !(align - 1)
 }
 
+/// # Errors
+/// Returns an error if `GetIpForwardTable2` fails or no default route is found.
 #[cfg(windows)]
 pub fn default_gateway() -> Result<Ipv4Addr> {
     use std::io;
@@ -215,6 +227,8 @@ pub fn default_gateway() -> Result<Ipv4Addr> {
     }
 }
 
+/// # Errors
+/// Always returns an error — auto-detection is not supported on this platform.
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "freebsd", windows)))]
 pub fn default_gateway() -> Result<Ipv4Addr> {
     bail!("auto-detection of the default gateway is not supported on this platform; use --gateway")
@@ -230,7 +244,7 @@ mod tests {
     fn make_sockaddr_in(ip: Ipv4Addr) -> [u8; 16] {
         let mut b = [0u8; 16];
         b[0] = 16; // sin_len
-        b[1] = libc::AF_INET as u8;
+        b[1] = u8::try_from(libc::AF_INET).expect("AF_INET fits u8");
         b[4..8].copy_from_slice(&ip.octets());
         b
     }
@@ -267,7 +281,7 @@ mod tests {
     fn non_ipv4_gateway_returns_err() {
         let mut data = [0u8; 16];
         data[0] = 16;
-        data[1] = libc::AF_INET6 as u8;
+        data[1] = u8::try_from(libc::AF_INET6).expect("AF_INET6 fits u8");
         let err = gateway_from_rtaddrs(libc::RTA_GATEWAY, &data).unwrap_err();
         assert!(format!("{err:#}").contains("not IPv4"));
     }

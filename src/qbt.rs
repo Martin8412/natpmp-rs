@@ -12,6 +12,7 @@ pub struct Client {
 }
 
 impl Client {
+    #[must_use]
     pub fn new(url: &str, username: &str, password: &str) -> Self {
         Self {
             url: url.trim_end_matches('/').to_owned(),
@@ -25,16 +26,23 @@ impl Client {
         }
     }
 
+    /// # Errors
+    /// Returns an error if login fails (bad credentials, network error) or if the
+    /// `setPreferences` request fails.
+    ///
+    /// # Panics
+    /// Panics if the internal session-cookie mutex is poisoned, which can only
+    /// happen if a previous thread panicked while holding it.
     pub fn set_listen_port(&self, port: u16) -> Result<()> {
         let prefs = format!(r#"{{"listen_port":{port}}}"#);
 
         // Try the cached session first; re-login only on auth failure.
-        let cached = self.cookie.lock().unwrap().clone();
+        let cached = self.cookie.lock().expect("cookie mutex poisoned").clone();
         if let Some(ref c) = cached {
             match self.set_preferences(c, &prefs) {
                 Ok(()) => return Ok(()),
                 Err(e) if is_auth_error(&e) => {
-                    *self.cookie.lock().unwrap() = None;
+                    *self.cookie.lock().expect("cookie mutex poisoned") = None;
                 }
                 Err(e) => return Err(e),
             }
@@ -42,7 +50,7 @@ impl Client {
 
         let cookie = self.login()?;
         self.set_preferences(&cookie, &prefs)?;
-        *self.cookie.lock().unwrap() = Some(cookie);
+        *self.cookie.lock().expect("cookie mutex poisoned") = Some(cookie);
         Ok(())
     }
 

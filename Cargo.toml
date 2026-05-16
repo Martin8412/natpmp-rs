@@ -37,3 +37,6 @@ windows-sys = { version = "0.59", features = [
 
 [dev-dependencies]
 proptest = "1"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }

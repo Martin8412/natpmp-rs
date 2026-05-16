@@ -7,10 +7,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cargo build                  # debug build
 cargo build --release        # release build
-cargo clippy                 # lint
-cargo test                   # run tests (none yet)
+cargo clippy -- -D warnings  # lint (must pass before finishing any task)
+cargo test                   # run tests
 cargo run -- --help          # show CLI help
 ```
+
+Always run `cargo clippy -- -D warnings` after making code changes and fix any warnings before considering a task done.
 
 ## Cross-compilation
 

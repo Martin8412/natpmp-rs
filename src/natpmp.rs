@@ -27,6 +27,9 @@ pub struct NatpmpClient {
 }
 
 impl NatpmpClient {
+    /// # Errors
+    /// Returns an error if the UDP socket cannot be bound or if binding to the
+    /// specified interface fails.
     pub fn new(gateway: Ipv4Addr, interface: Option<&str>) -> Result<Self> {
         let socket = make_socket(interface)?;
         socket
@@ -38,6 +41,10 @@ impl NatpmpClient {
     /// Alternative constructor that connects to `gateway:port` instead of the
     /// standard port 5351.  Useful for integration tests that spin up a mock
     /// server on an OS-assigned loopback port.
+    ///
+    /// # Errors
+    /// Returns an error if the UDP socket cannot be bound or if binding to the
+    /// specified interface fails.
     #[allow(dead_code)]
     pub fn new_with_port(gateway: Ipv4Addr, port: u16, interface: Option<&str>) -> Result<Self> {
         let socket = make_socket(interface)?;
@@ -111,11 +118,16 @@ impl NatpmpClient {
         bail!("no response from gateway {gw} — VPN not connected or {gw} is not the NAT-PMP server")
     }
 
+    /// # Errors
+    /// Returns an error if the NAT-PMP request fails or the gateway does not respond.
     pub fn get_public_address(&self) -> Result<Ipv4Addr> {
         let buf = self.transact(&[0, 0], 128)?;
         Ok(Ipv4Addr::new(buf[8], buf[9], buf[10], buf[11]))
     }
 
+    /// # Errors
+    /// Returns an error if the NAT-PMP request fails, the gateway does not respond,
+    /// or the gateway refuses the mapping (returns port 0 or lifetime 0).
     pub fn map_port(
         &self,
         private_port: u16,
@@ -304,7 +316,7 @@ fn bind_to_interface(socket: &UdpSocket, iface: &str) -> Result<()> {
             libc::SOL_SOCKET,
             libc::SO_BINDTODEVICE,
             bytes.as_ptr().cast::<libc::c_void>(),
-            u32::try_from(bytes.len()).unwrap(),
+            bytes.len() as u32,
         )
     };
     if ret != 0 {
@@ -329,7 +341,7 @@ fn bind_to_interface(socket: &UdpSocket, iface: &str) -> Result<()> {
             libc::IPPROTO_IP,
             libc::IP_BOUND_IF,
             (&raw const idx).cast::<libc::c_void>(),
-            u32::try_from(std::mem::size_of::<libc::c_uint>()).unwrap(),
+            u32::try_from(std::mem::size_of::<libc::c_uint>()).expect("c_uint size fits u32"),
         )
     };
     if ret != 0 {
