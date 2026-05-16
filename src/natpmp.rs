@@ -316,7 +316,7 @@ fn bind_to_interface(socket: &UdpSocket, iface: &str) -> Result<()> {
             libc::SOL_SOCKET,
             libc::SO_BINDTODEVICE,
             bytes.as_ptr().cast::<libc::c_void>(),
-            bytes.len() as u32,
+            u32::try_from(bytes.len()).expect("interface name fits u32"),
         )
     };
     if ret != 0 {
@@ -373,14 +373,16 @@ fn interface_ipv4(iface: &str) -> Result<Ipv4Addr> {
     let mut buf_len: u32 = 16_384;
 
     for _ in 0..4 {
-        let mut buf = vec![0u8; buf_len as usize];
+        // Allocate as u64 to guarantee the 8-byte alignment required by
+        // IP_ADAPTER_ADDRESSES_LH; buf_len is still tracked in bytes.
+        let mut buf: Vec<u64> = vec![0u64; (buf_len as usize + 7) / 8];
         let ret = unsafe {
             GetAdaptersAddresses(
-                AF_INET as u32,
+                u32::from(AF_INET),
                 FLAGS,
                 std::ptr::null_mut(),
-                buf.as_mut_ptr() as *mut IP_ADAPTER_ADDRESSES_LH,
-                &mut buf_len,
+                buf.as_mut_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>(),
+                &raw mut buf_len,
             )
         };
 
@@ -389,16 +391,20 @@ fn interface_ipv4(iface: &str) -> Result<Ipv4Addr> {
             continue;
         }
         if ret != 0 {
-            return Err(io::Error::from_raw_os_error(ret as i32))
+            return Err(io::Error::from_raw_os_error(ret.cast_signed()))
                 .context("GetAdaptersAddresses");
         }
 
-        let mut p = buf.as_ptr() as *const IP_ADAPTER_ADDRESSES_LH;
+        let mut p = buf.as_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
         while !p.is_null() {
             let adapter = unsafe { &*p };
             let name: Vec<u16> = unsafe {
                 let ptr = adapter.FriendlyName;
-                (0usize..).map(|i| *ptr.add(i)).take_while(|&c| c != 0).collect()
+                let mut len = 0usize;
+                while *ptr.add(len) != 0 {
+                    len += 1;
+                }
+                std::slice::from_raw_parts(ptr, len).to_vec()
             };
 
             if name == iface_wide {
@@ -407,7 +413,10 @@ fn interface_ipv4(iface: &str) -> Result<Ipv4Addr> {
                     let ua_ref = unsafe { &*ua };
                     let sa_ptr = ua_ref.Address.lpSockaddr;
                     if !sa_ptr.is_null() {
-                        let sa = unsafe { &*(sa_ptr as *const SOCKADDR_IN) };
+                        // SOCKADDR pointer may be less aligned than SOCKADDR_IN requires;
+                        // read_unaligned avoids undefined behaviour from the cast.
+                        let sa: SOCKADDR_IN =
+                            unsafe { std::ptr::read_unaligned(sa_ptr.cast()) };
                         if sa.sin_family == AF_INET {
                             let addr = unsafe { sa.sin_addr.S_un.S_addr };
                             return Ok(Ipv4Addr::from(addr.to_ne_bytes()));

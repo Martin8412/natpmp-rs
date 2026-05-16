@@ -12,6 +12,9 @@ pub fn default_gateway() -> Result<Ipv4Addr> {
 
 /// Parses the text content of `/proc/net/route` and returns the IPv4 address
 /// of the default gateway.  Exposed for fuzz testing and property tests.
+///
+/// # Errors
+/// Returns an error if the content contains no default route.
 #[cfg(target_os = "linux")]
 #[cfg_attr(not(feature = "fuzz"), allow(dead_code))]
 pub fn parse_proc_net_route(content: &str) -> Result<Ipv4Addr> {
@@ -193,17 +196,17 @@ pub fn default_gateway() -> Result<Ipv4Addr> {
     };
     use windows_sys::Win32::Networking::WinSock::AF_INET;
 
-    let mut table: *mut MIB_IPFORWARD_TABLE2 = std::ptr::null_mut();
-    let err = unsafe { GetIpForwardTable2(AF_INET, &mut table) };
-    if err != 0 {
-        return Err(io::Error::from_raw_os_error(err as i32)).context("GetIpForwardTable2");
-    }
-
     struct Guard(*mut MIB_IPFORWARD_TABLE2);
     impl Drop for Guard {
         fn drop(&mut self) {
             unsafe { FreeMibTable(self.0.cast()) };
         }
+    }
+
+    let mut table: *mut MIB_IPFORWARD_TABLE2 = std::ptr::null_mut();
+    let err = unsafe { GetIpForwardTable2(AF_INET, &raw mut table) };
+    if err != 0 {
+        return Err(io::Error::from_raw_os_error(err.cast_signed())).context("GetIpForwardTable2");
     }
     let _guard = Guard(table);
 
