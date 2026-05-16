@@ -1,0 +1,37 @@
+[package]
+name = "natpmp"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "natpmp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "natpmp"
+path = "src/main.rs"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+
+[features]
+# Exposes pure parsing functions for fuzz targets.
+fuzz = []
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+libc = "0.2"
+ureq = "3"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+] }
+
+[dev-dependencies]
+proptest = "1"

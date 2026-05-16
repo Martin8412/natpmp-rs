@@ -1,0 +1,59 @@
+# natpmp@.service — ProtonVPN NAT-PMP port forwarding + qBittorrent integration
+#
+# The instance name is the VPN interface, e.g.:
+#   systemctl enable --now natpmp@proton0
+#   systemctl enable --now natpmp@tun0
+#
+# Install:
+#   sudo cp natpmp@.service /etc/systemd/system/
+#   sudo cp natpmp.env      /etc/natpmp.env          # edit credentials first
+#   sudo chmod 600          /etc/natpmp.env
+#   sudo cp natpmp-linux-arm64 /usr/local/bin/natpmp
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now natpmp@proton0
+
+[Unit]
+Description=ProtonVPN NAT-PMP port forwarding (%i)
+# Start after the VPN interface named by the instance is present.
+After=network-online.target sys-subsystem-net-devices-%i.device
+Wants=network-online.target
+# Stop and restart whenever the VPN interface goes away and comes back.
+BindsTo=sys-subsystem-net-devices-%i.device
+
+[Service]
+Type=simple
+
+# Credentials are kept outside the unit file.
+EnvironmentFile=/etc/natpmp.env
+
+ExecStart=/usr/local/bin/natpmp \
+    --gateway   10.2.0.1 \
+    --interface %i \
+    --lifetime  60 \
+    --qbt-url   ${QBT_URL} \
+    --qbt-user  ${QBT_USER} \
+    --qbt-pass  ${QBT_PASS}
+
+# Restart whenever the binary exits (VPN drop, transient errors, etc.).
+Restart=always
+RestartSec=15s
+
+# SO_BINDTODEVICE on an unbound socket requires no special capability on Linux ≥ 5.7
+# (kernel commit c427bfec, April 2020). Running as nobody is sufficient.
+User=nobody
+
+# Minimal sandbox — the binary only needs network access.
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictNamespaces=true
+SystemCallFilter=@system-service
+
+# Log the public port on each renewal (stdout goes to journald).
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=natpmp
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,31 @@
+[package]
+name = "natpmp-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.natpmp]
+path = ".."
+features = ["fuzz"]
+
+# Parse arbitrary bytes as a NAT-PMP response — covers all three opcodes.
+[[bin]]
+name = "parse_natpmp_response"
+path = "fuzz_targets/parse_natpmp_response.rs"
+test = false
+doc = false
+bench = false
+
+# Parse arbitrary text as /proc/net/route content (Linux only).
+[[bin]]
+name = "parse_proc_net_route"
+path = "fuzz_targets/parse_proc_net_route.rs"
+test = false
+doc = false
+bench = false

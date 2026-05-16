@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Update Rust to stable
+        run: rustup update stable && rustup default stable
+
+      - name: Run tests
+        run: cargo test
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-arm64
+            runner: ubuntu-latest
+          - target: linux-amd64
+            runner: ubuntu-latest
+          - target: macos-arm64
+            runner: macos-latest
+          - target: macos-amd64
+            runner: macos-latest
+          - target: windows-amd64
+            runner: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Update Rust to stable
+        run: rustup update stable && rustup default stable
+
+      # cross version is pinned manually — Dependabot cannot track shell-script downloads.
+      # To upgrade: update the version tag and recompute the SHA256 with:
+      #   curl -fsSL <url> | sha256sum
+      - name: Install cross
+        if: runner.os == 'Linux'
+        run: |
+          archive="cross-x86_64-unknown-linux-musl.tar.gz"
+          curl -fsSL \
+            "https://github.com/cross-rs/cross/releases/download/v0.2.5/${archive}" \
+            -o "${archive}"
+          echo "a486cefa6cb486971b97be321ea9dfc2e90c1979550295314a368f53fab6d588  ${archive}" \
+            | sha256sum --check
+          tar -xzf "${archive}" cross
+          sudo mv cross /usr/local/bin/
+          rm "${archive}"
+
+      - name: Build
+        run: ./build.sh ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: natpmp-${{ matrix.target }}
+          path: dist/natpmp-${{ matrix.target }}*
+          if-no-files-found: error
+
+  release:
+    name: Create release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: cd dist && sha256sum * > sha256sums.txt
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --generate-notes \
+            dist/*
