@@ -47,3 +47,22 @@ jobs:
 
       - name: Fuzz parse_proc_net_route
         run: cargo fuzz run parse_proc_net_route -- -max_total_time=30
+
+  asan:
+    name: AddressSanitizer
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install nightly Rust with rust-src
+        run: |
+          rustup update nightly
+          rustup default nightly
+          rustup component add rust-src
+
+      - name: Run tests under AddressSanitizer
+        env:
+          RUSTFLAGS: -Z sanitizer=address
+        run: cargo test -Z build-std --target x86_64-unknown-linux-gnu
