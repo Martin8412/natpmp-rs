@@ -6,27 +6,12 @@ on:
       - 'v*'
 
 jobs:
-  test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: true
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-
-      - name: Update Rust to stable
-        run: rustup update stable && rustup default stable
-
-      - name: Run tests
-        run: cargo test
+  ci:
+    uses: ./.github/workflows/ci.yml
 
   build:
     name: Build ${{ matrix.target }}
-    needs: test
+    needs: ci
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
