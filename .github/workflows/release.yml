@@ -9,6 +9,8 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: true
       matrix:
@@ -17,6 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Update Rust to stable
         run: rustup update stable && rustup default stable
@@ -30,16 +34,20 @@ jobs:
   fuzz:
     name: Fuzz
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Install nightly Rust
         run: rustup update nightly && rustup default nightly
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz
+        run: cargo install cargo-fuzz --version 0.13.1 --locked
 
       - name: Fuzz parse_natpmp_response
         run: cargo fuzz run parse_natpmp_response -- -max_total_time=30
@@ -50,10 +58,14 @@ jobs:
   asan:
     name: AddressSanitizer
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Install nightly Rust with rust-src
         run: |
@@ -70,6 +82,8 @@ jobs:
     name: Build ${{ matrix.target }}
     needs: [test, fuzz, asan]
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -88,6 +102,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Update Rust to stable
         run: rustup update stable && rustup default stable
