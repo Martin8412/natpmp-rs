@@ -22,9 +22,12 @@ jobs:
   release:
     name: Bump patch version and tag
     runs-on: ubuntu-latest
+    # Only release for Rust dependency updates. github-actions bumps (branch
+    # prefix dependabot/github_actions/) don't change the binary, so skip them.
     if: >-
       github.event.pull_request.merged == true &&
-      github.event.pull_request.user.login == 'dependabot[bot]'
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      startsWith(github.event.pull_request.head.ref, 'dependabot/cargo/')
     concurrency:
       group: auto-release
       cancel-in-progress: false

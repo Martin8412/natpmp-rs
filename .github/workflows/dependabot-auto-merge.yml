@@ -5,11 +5,17 @@ name: Dependabot auto-merge
 # depends entirely on branch protection requiring the CI checks on master. If
 # branch protection is absent, `gh pr merge --auto` merges immediately with no
 # CI gate. Keep the required-checks rule in place.
+#
+# Auto-merge is enabled with a GitHub App token (APP_CLIENT_ID/APP_PRIVATE_KEY),
+# NOT the default GITHUB_TOKEN. A merge performed on behalf of GITHUB_TOKEN does
+# not trigger further workflow runs (GitHub's recursion guard), which would stop
+# the downstream auto-release.yml from firing on pull_request: closed. The App
+# token is exempt, so the merge correctly cascades into the release pipeline.
 
 on: pull_request
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
 
 jobs:
@@ -19,6 +25,14 @@ jobs:
     if: github.actor == 'dependabot[bot]'
 
     steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+
       - name: Approve the pull request
         run: gh pr review --approve "$PR_URL"
         env:
@@ -28,8 +42,9 @@ jobs:
       # Auto-merge every Dependabot update regardless of semver bump: the full
       # CI suite (tests on 3 OSes, clippy, fuzz, ASan) gates the merge, and a
       # breaking dependency change almost always fails to compile or test.
+      # Enabled with the App token so the eventual merge triggers auto-release.
       - name: Enable auto-merge
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
