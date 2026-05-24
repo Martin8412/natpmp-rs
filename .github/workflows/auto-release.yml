@@ -95,36 +95,15 @@ jobs:
             echo "prev=${current}"
           } >> "$GITHUB_OUTPUT"
 
-      # Record the release in CHANGELOG.md. auto-release only fires for Rust
-      # dependency updates, so the entry is always a dependency bump. Skips
-      # gracefully if the changelog or its [Unreleased] section is missing.
+      # Record the release in CHANGELOG.md, listing the dependencies Dependabot
+      # updated in this merge (read from the merge commit body, which is HEAD).
       - name: Update changelog
         if: steps.guard.outputs.skip != 'true'
         env:
           NEXT: ${{ steps.bump.outputs.version }}
           PREV: ${{ steps.bump.outputs.prev }}
           REPO: ${{ github.repository }}
-        run: |
-          if [ ! -f CHANGELOG.md ] || ! grep -q '^## \[Unreleased\]$' CHANGELOG.md; then
-            echo "No CHANGELOG.md [Unreleased] section; skipping changelog update."
-            exit 0
-          fi
-          date="$(date -u +%Y-%m-%d)"
-          url="https://github.com/${REPO}"
-          awk -v ver="$NEXT" -v date="$date" '
-            { print }
-            /^## \[Unreleased\]$/ && !done {
-              print ""
-              print "## [" ver "] - " date
-              print ""
-              print "### Changed"
-              print ""
-              print "- Update Rust dependencies."
-              done = 1
-            }
-          ' CHANGELOG.md > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
-          sed -i -E "s#^\[Unreleased\]:.*#[Unreleased]: ${url}/compare/v${NEXT}...HEAD#" CHANGELOG.md
-          sed -i "/^\[Unreleased\]:/a [${NEXT}]: ${url}/compare/v${PREV}...v${NEXT}" CHANGELOG.md
+        run: ./scripts/changelog-release-entry.sh
 
       - name: Commit, tag, and push
         if: steps.guard.outputs.skip != 'true'
