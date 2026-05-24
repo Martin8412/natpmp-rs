@@ -1,0 +1,84 @@
+name: Auto patch release
+
+# When a Dependabot pull request lands on master, bump the patch version and
+# push a release tag. The push is made with a GitHub App installation token
+# (not the default GITHUB_TOKEN), so the tag push triggers release.yml, which
+# builds and publishes the binaries. GITHUB_TOKEN-authored pushes are
+# deliberately suppressed from triggering further workflows; App tokens are not.
+#
+# Requires repository secrets APP_CLIENT_ID and APP_PRIVATE_KEY for a GitHub App
+# installed on this repo with "Contents: read/write" permission, whose identity
+# is on the master branch-protection bypass list. The default GITHUB_TOKEN can
+# neither bypass branch protection nor trigger the downstream release workflow.
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Bump patch version and tag
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.user.login == 'dependabot[bot]'
+    concurrency:
+      group: auto-release
+      cancel-in-progress: false
+
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Get GitHub App User ID
+        id: get-user-id
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: echo "user-id=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout master
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: master
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure git identity
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          USER_ID: ${{ steps.get-user-id.outputs.user-id }}
+        run: |
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          # The [package] version is the first `version = ` line in Cargo.toml.
+          current="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "(.*)"$/\1/')"
+          IFS=. read -r major minor patch <<< "$current"
+          next="${major}.${minor}.$((patch + 1))"
+          echo "Bumping ${current} -> ${next}"
+          sed -i "0,/^version = \".*\"$/s//version = \"${next}\"/" Cargo.toml
+          # Sync this crate's own entry in Cargo.lock. --workspace updates only
+          # workspace members, leaving dependency versions untouched.
+          cargo update --workspace
+          echo "tag=v${next}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit, tag, and push
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore: release ${TAG}"
+          git tag -a "${TAG}" -m "Release ${TAG}"
+          git push origin master
+          git push origin "${TAG}"
