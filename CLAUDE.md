@@ -14,6 +14,18 @@ cargo run -- --help          # show CLI help
 
 Always run `cargo clippy -- -D warnings` after making code changes and fix any warnings before considering a task done.
 
+## Releases
+
+Pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml`, which builds all
+targets and publishes a GitHub release. `CHANGELOG.md` (Keep a Changelog format)
+must reflect every released version.
+
+- **Automated:** when a Dependabot Rust-dependency PR merges, `auto-release.yml`
+  bumps the patch version, adds a `CHANGELOG.md` entry, commits, and tags.
+- **Manual:** edit `version` in `Cargo.toml`, move the `CHANGELOG.md`
+  `[Unreleased]` entries under a new `## [X.Y.Z] - DATE` heading (and update the
+  comparison links at the bottom), commit, then push the `vX.Y.Z` tag.
+
 ## Cross-compilation
 
 `build.sh` cross-compiles for all targets and places stripped binaries in `dist/`.
