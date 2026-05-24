@@ -53,8 +53,22 @@ jobs:
         with:
           ref: master
           token: ${{ steps.app-token.outputs.token }}
+          # Need the merge commit's parent to diff the root lockfile below.
+          fetch-depth: 2
+
+      # The cargo gate also matches /fuzz updates (branch dependabot/cargo/...),
+      # but those don't change the root crate. Release only when the squash
+      # merge actually touched the root Cargo.toml/Cargo.lock.
+      - name: Skip release if root crate unchanged
+        id: guard
+        run: |
+          if git diff --quiet HEAD~1 HEAD -- Cargo.toml Cargo.lock; then
+            echo "Root crate unchanged (e.g. fuzz-only update); skipping release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Configure git identity
+        if: steps.guard.outputs.skip != 'true'
         env:
           APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
           USER_ID: ${{ steps.get-user-id.outputs.user-id }}
@@ -64,6 +78,7 @@ jobs:
 
       - name: Bump patch version
         id: bump
+        if: steps.guard.outputs.skip != 'true'
         run: |
           # The [package] version is the first `version = ` line in Cargo.toml.
           current="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "(.*)"$/\1/')"
@@ -77,6 +92,7 @@ jobs:
           echo "tag=v${next}" >> "$GITHUB_OUTPUT"
 
       - name: Commit, tag, and push
+        if: steps.guard.outputs.skip != 'true'
         env:
           TAG: ${{ steps.bump.outputs.tag }}
         run: |
