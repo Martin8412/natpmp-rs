@@ -54,9 +54,7 @@ fn mock_server(responses: Vec<Vec<u8>>) -> (SocketAddr, JoinHandle<()>) {
                 Ok(v) => v,
                 Err(_) => return, // timeout / shutdown
             };
-            socket
-                .send_to(&response, peer)
-                .expect("mock server send");
+            socket.send_to(&response, peer).expect("mock server send");
         }
         // Drain further datagrams silently (no replies).
         loop {
@@ -112,7 +110,7 @@ fn mock_server_capture(
 /// Builds a public-address response (opcode 128, 12 bytes).
 fn build_addr_response(result: u16, ip: Ipv4Addr) -> Vec<u8> {
     let mut pkt = vec![0u8; 12];
-    pkt[0] = 0;   // version
+    pkt[0] = 0; // version
     pkt[1] = 128; // opcode
     pkt[2..4].copy_from_slice(&result.to_be_bytes());
     pkt[4..8].copy_from_slice(&42u32.to_be_bytes()); // epoch — any value
@@ -141,8 +139,7 @@ fn build_map_response(
 
 /// Builds a new `NatpmpClient` aimed at the given loopback server address.
 fn client_for(addr: SocketAddr) -> NatpmpClient {
-    NatpmpClient::new_with_port(Ipv4Addr::LOCALHOST, addr.port(), None)
-        .expect("create test client")
+    NatpmpClient::new_with_port(Ipv4Addr::LOCALHOST, addr.port(), None).expect("create test client")
 }
 
 // ---------------------------------------------------------------------------
@@ -384,7 +381,9 @@ fn test_retransmission_succeeds_after_initial_silence() {
     });
 
     let client = client_for(addr);
-    let ip = client.get_public_address().expect("should succeed after retransmits");
+    let ip = client
+        .get_public_address()
+        .expect("should succeed after retransmits");
     assert_eq!(ip, expected_ip);
     drop(handle);
 }
@@ -410,8 +409,7 @@ fn test_request_format_public_address() {
 /// UDP mapping request: 12 bytes, opcode=1, private_port and lifetime big-endian.
 #[test]
 fn test_request_format_map_port_udp() {
-    let (addr, rx, _srv) =
-        mock_server_capture(vec![build_map_response(129, 0, 1234, 5000, 60)]);
+    let (addr, rx, _srv) = mock_server_capture(vec![build_map_response(129, 0, 1234, 5000, 60)]);
     let client = client_for(addr);
     client.map_port(1234, Protocol::Udp, 60).expect("map_port");
 
@@ -440,8 +438,7 @@ fn test_request_format_map_port_udp() {
 /// TCP mapping request: same layout as UDP but opcode=2.
 #[test]
 fn test_request_format_map_port_tcp() {
-    let (addr, rx, _srv) =
-        mock_server_capture(vec![build_map_response(130, 0, 4321, 5000, 120)]);
+    let (addr, rx, _srv) = mock_server_capture(vec![build_map_response(130, 0, 4321, 5000, 120)]);
     let client = client_for(addr);
     client.map_port(4321, Protocol::Tcp, 120).expect("map_port");
 
@@ -544,7 +541,9 @@ fn capture_first_request(response: Vec<u8>) -> (SocketAddr, std::sync::mpsc::Rec
 
     thread::spawn(move || {
         let mut buf = [0u8; 256];
-        let Ok((n, peer)) = socket.recv_from(&mut buf) else { return };
+        let Ok((n, peer)) = socket.recv_from(&mut buf) else {
+            return;
+        };
         let _ = tx.send(buf[..n].to_vec());
         let _ = socket.send_to(&response, peer);
         loop {
@@ -561,8 +560,7 @@ fn capture_first_request(response: Vec<u8>) -> (SocketAddr, std::sync::mpsc::Rec
 /// `get_public_address` must send version=0, opcode=0 (RFC 6886 §3.2).
 #[test]
 fn test_request_get_public_address_wire_format() {
-    let (addr, rx) =
-        capture_first_request(build_addr_response(0, Ipv4Addr::new(1, 2, 3, 4)));
+    let (addr, rx) = capture_first_request(build_addr_response(0, Ipv4Addr::new(1, 2, 3, 4)));
     client_for(addr).get_public_address().unwrap();
 
     let req = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
@@ -575,8 +573,7 @@ fn test_request_get_public_address_wire_format() {
 /// in bytes 8–11, all big-endian (RFC 6886 §3.3).
 #[test]
 fn test_request_map_port_udp_wire_format() {
-    let (addr, rx) =
-        capture_first_request(build_map_response(129, 0, 1234, 5678, 60));
+    let (addr, rx) = capture_first_request(build_map_response(129, 0, 1234, 5678, 60));
     client_for(addr).map_port(1234, Protocol::Udp, 60).unwrap();
 
     let req = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
@@ -603,8 +600,7 @@ fn test_request_map_port_udp_wire_format() {
 /// `map_port(..., Protocol::Tcp, ...)` must send opcode=2 (RFC 6886 §3.3).
 #[test]
 fn test_request_map_port_tcp_wire_format() {
-    let (addr, rx) =
-        capture_first_request(build_map_response(130, 0, 9999, 5678, 120));
+    let (addr, rx) = capture_first_request(build_map_response(130, 0, 9999, 5678, 120));
     client_for(addr).map_port(9999, Protocol::Tcp, 120).unwrap();
 
     let req = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
@@ -637,11 +633,15 @@ fn test_too_short_response_triggers_retransmit() {
 
     thread::spawn(move || {
         let mut buf = [0u8; 256];
-        let Ok((_, peer)) = socket.recv_from(&mut buf) else { return };
+        let Ok((_, peer)) = socket.recv_from(&mut buf) else {
+            return;
+        };
         // 3-byte runt — too short to parse.
         socket.send_to(&[0u8, 128u8, 0u8], peer).unwrap();
         // Valid reply to the retransmit.
-        let Ok((_, peer)) = socket.recv_from(&mut buf) else { return };
+        let Ok((_, peer)) = socket.recv_from(&mut buf) else {
+            return;
+        };
         socket
             .send_to(&build_addr_response(0, expected), peer)
             .unwrap();
@@ -672,7 +672,9 @@ fn test_truncated_response_returns_error() {
     thread::spawn(move || {
         let mut buf = [0u8; 256];
         loop {
-            let Ok((_, peer)) = socket.recv_from(&mut buf) else { return };
+            let Ok((_, peer)) = socket.recv_from(&mut buf) else {
+                return;
+            };
             // 8 bytes: correct version + opcode, result=0, partial epoch — no IP.
             let _ = socket.send_to(&[0u8, 128u8, 0u8, 0u8, 0u8, 0u8, 0u8, 42u8], peer);
         }
@@ -737,14 +739,14 @@ fn test_connection_refused_bails_immediately_with_helpful_message() {
 
     let (tx, rx) = std::sync::mpsc::channel();
     thread::spawn(move || {
-        let client = NatpmpClient::new_with_port(Ipv4Addr::LOCALHOST, port, None)
-            .expect("create client");
+        let client =
+            NatpmpClient::new_with_port(Ipv4Addr::LOCALHOST, port, None).expect("create client");
         let _ = tx.send(client.get_public_address());
     });
 
-    let result = rx
-        .recv_timeout(std::time::Duration::from_secs(5))
-        .expect("ConnectionRefused must not be retried — client must bail immediately, not after 128 s");
+    let result = rx.recv_timeout(std::time::Duration::from_secs(5)).expect(
+        "ConnectionRefused must not be retried — client must bail immediately, not after 128 s",
+    );
 
     assert!(result.is_err(), "ConnectionRefused must produce Err");
 

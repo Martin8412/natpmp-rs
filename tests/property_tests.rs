@@ -7,14 +7,14 @@
 //! The mock infrastructure is the same loopback-socket pattern used in the
 //! other integration test files.
 
-use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};
-use std::io::{BufRead, BufReader, Read, Write};
-use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
-use proptest::prelude::*;
 use natpmp::{NatpmpClient, Protocol};
+use proptest::prelude::*;
 
 // ── UDP mock helpers (copy of the pattern from natpmp_tests.rs) ───────────────
 
@@ -27,7 +27,9 @@ fn mock_udp(responses: Vec<Vec<u8>>) -> SocketAddr {
     thread::spawn(move || {
         let mut buf = [0u8; 256];
         for resp in responses {
-            let Ok((_, peer)) = socket.recv_from(&mut buf) else { return };
+            let Ok((_, peer)) = socket.recv_from(&mut buf) else {
+                return;
+            };
             let _ = socket.send_to(&resp, peer);
         }
         loop {
@@ -41,8 +43,7 @@ fn mock_udp(responses: Vec<Vec<u8>>) -> SocketAddr {
 }
 
 fn udp_client(addr: SocketAddr) -> NatpmpClient {
-    NatpmpClient::new_with_port(Ipv4Addr::LOCALHOST, addr.port(), None)
-        .expect("create test client")
+    NatpmpClient::new_with_port(Ipv4Addr::LOCALHOST, addr.port(), None).expect("create test client")
 }
 
 fn addr_response(result: u16, ip: Ipv4Addr) -> Vec<u8> {
@@ -75,7 +76,9 @@ fn capture_udp_request(response: Vec<u8>) -> (SocketAddr, std::sync::mpsc::Recei
     let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
     thread::spawn(move || {
         let mut buf = [0u8; 256];
-        let Ok((n, peer)) = socket.recv_from(&mut buf) else { return };
+        let Ok((n, peer)) = socket.recv_from(&mut buf) else {
+            return;
+        };
         let _ = tx.send(buf[..n].to_vec());
         let _ = socket.send_to(&response, peer);
         loop {
@@ -106,7 +109,9 @@ fn mock_http(responses: Vec<HttpResp>) -> (String, Arc<Mutex<Vec<String>>>) {
     thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(stream) = stream else { return };
-            stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).ok();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .ok();
             let q = Arc::clone(&queue);
             let b = Arc::clone(&bodies_clone);
             thread::spawn(move || http_handler(stream, q, b));
@@ -135,30 +140,46 @@ fn http_handler(
         let mut content_length = 0usize;
         loop {
             let mut h = String::new();
-            if reader.read_line(&mut h).unwrap_or(0) == 0 { return; }
-            if h == "\r\n" || h == "\n" { break; }
+            if reader.read_line(&mut h).unwrap_or(0) == 0 {
+                return;
+            }
+            if h == "\r\n" || h == "\n" {
+                break;
+            }
             if let Some(v) = h.to_lowercase().strip_prefix("content-length:") {
                 content_length = v.trim().parse().unwrap_or(0);
             }
         }
         let mut body_bytes = vec![0u8; content_length];
-        if content_length > 0 && reader.read_exact(&mut body_bytes).is_err() { return; }
-        bodies.lock().unwrap().push(String::from_utf8_lossy(&body_bytes).into_owned());
+        if content_length > 0 && reader.read_exact(&mut body_bytes).is_err() {
+            return;
+        }
+        bodies
+            .lock()
+            .unwrap()
+            .push(String::from_utf8_lossy(&body_bytes).into_owned());
 
         let resp = match queue.lock().unwrap().pop_front() {
             Some(r) => r,
             None => return,
         };
-        let reason = if resp.status == 200 { "OK" } else { "Forbidden" };
+        let reason = if resp.status == 200 {
+            "OK"
+        } else {
+            "Forbidden"
+        };
         let mut out = format!("HTTP/1.1 {} {}\r\n", resp.status, reason);
         if let Some(c) = resp.cookie {
             out.push_str(&format!("Set-Cookie: {c}\r\n"));
         }
         out.push_str(&format!(
             "Content-Length: {}\r\nConnection: keep-alive\r\n\r\n{}",
-            resp.body.len(), resp.body
+            resp.body.len(),
+            resp.body
         ));
-        if writer.write_all(out.as_bytes()).is_err() { return; }
+        if writer.write_all(out.as_bytes()).is_err() {
+            return;
+        }
         let _ = writer.flush();
     }
 }

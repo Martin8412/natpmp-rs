@@ -25,15 +25,27 @@ struct MockResponse {
 
 impl MockResponse {
     fn ok(body: impl Into<String>) -> Self {
-        Self { status: 200, cookie: None, body: body.into() }
+        Self {
+            status: 200,
+            cookie: None,
+            body: body.into(),
+        }
     }
 
     fn with_cookie(cookie: impl Into<String>, body: impl Into<String>) -> Self {
-        Self { status: 200, cookie: Some(cookie.into()), body: body.into() }
+        Self {
+            status: 200,
+            cookie: Some(cookie.into()),
+            body: body.into(),
+        }
     }
 
     fn forbidden() -> Self {
-        Self { status: 403, cookie: None, body: String::new() }
+        Self {
+            status: 403,
+            cookie: None,
+            body: String::new(),
+        }
     }
 }
 
@@ -42,9 +54,7 @@ impl MockResponse {
 ///
 /// Returns `(base_url, captured)` where `captured` accumulates
 /// `(request_path, request_body)` for every request received.
-fn spawn_mock_http(
-    responses: Vec<MockResponse>,
-) -> (String, Arc<Mutex<Vec<(String, String)>>>) {
+fn spawn_mock_http(responses: Vec<MockResponse>) -> (String, Arc<Mutex<Vec<(String, String)>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock HTTP server");
     let port = listener.local_addr().unwrap().port();
     let url = format!("http://127.0.0.1:{port}");
@@ -120,10 +130,7 @@ fn read_http_request(reader: &mut BufReader<TcpStream>) -> Option<(String, Strin
         if line.is_empty() {
             break;
         }
-        if let Some(val) = line
-            .to_ascii_lowercase()
-            .strip_prefix("content-length:")
-        {
+        if let Some(val) = line.to_ascii_lowercase().strip_prefix("content-length:") {
             content_length = val.trim().parse().unwrap_or(0);
         }
     }
@@ -219,8 +226,8 @@ fn test_bad_credentials() {
 fn test_cookie_is_cached() {
     let (url, captured) = spawn_mock_http(vec![
         MockResponse::with_cookie("SID=abc123; Path=/", "Ok."), // login
-        MockResponse::ok(""),                                    // setPreferences(8080)
-        MockResponse::ok(""),                                    // setPreferences(9090) — no login
+        MockResponse::ok(""),                                   // setPreferences(8080)
+        MockResponse::ok(""),                                   // setPreferences(9090) — no login
     ]);
 
     let client = Client::new(&url, "admin", "secret");
@@ -255,13 +262,19 @@ fn test_cookie_is_cached() {
 fn test_non_403_server_error_propagates_without_reauth() {
     let (url, captured) = spawn_mock_http(vec![
         MockResponse::with_cookie("SID=tok; Path=/", "Ok."), // call 1: login
-        MockResponse::ok(""),                                  // call 1: setPreferences(1111) → OK (cookie cached)
-        MockResponse { status: 500, cookie: None, body: "Internal Server Error".into() }, // call 2: setPreferences(2222) → 500
+        MockResponse::ok(""), // call 1: setPreferences(1111) → OK (cookie cached)
+        MockResponse {
+            status: 500,
+            cookie: None,
+            body: "Internal Server Error".into(),
+        }, // call 2: setPreferences(2222) → 500
         MockResponse::with_cookie("SID=tok2; Path=/", "Ok."), // only reached if is_auth_error wrongly fires re-login
     ]);
 
     let client = Client::new(&url, "admin", "secret");
-    client.set_listen_port(1111).expect("first call must succeed");
+    client
+        .set_listen_port(1111)
+        .expect("first call must succeed");
     assert!(
         client.set_listen_port(2222).is_err(),
         "500 from setPreferences must return Err"
@@ -274,7 +287,10 @@ fn test_non_403_server_error_propagates_without_reauth() {
         "non-403 error must not trigger re-login; got {} requests (expected 3: login + setPreferences(1111) + setPreferences(2222))",
         reqs.len()
     );
-    assert!(reqs[2].0.ends_with("/api/v2/app/setPreferences"), "request 3 must be setPreferences");
+    assert!(
+        reqs[2].0.ends_with("/api/v2/app/setPreferences"),
+        "request 3 must be setPreferences"
+    );
 }
 
 /// A 403 from setPreferences clears the cached cookie, triggers re-login, and
@@ -282,11 +298,11 @@ fn test_non_403_server_error_propagates_without_reauth() {
 #[test]
 fn test_reauthentication_on_403() {
     let (url, captured) = spawn_mock_http(vec![
-        MockResponse::with_cookie("SID=first; Path=/", "Ok."),  // initial login
-        MockResponse::ok(""),                                    // setPreferences(1111) → ok
-        MockResponse::forbidden(),                               // setPreferences(2222) → 403
+        MockResponse::with_cookie("SID=first; Path=/", "Ok."), // initial login
+        MockResponse::ok(""),                                  // setPreferences(1111) → ok
+        MockResponse::forbidden(),                             // setPreferences(2222) → 403
         MockResponse::with_cookie("SID=second; Path=/", "Ok."), // re-login
-        MockResponse::ok(""),                                    // setPreferences(2222) → ok
+        MockResponse::ok(""),                                  // setPreferences(2222) → ok
     ]);
 
     let client = Client::new(&url, "admin", "secret");
@@ -298,10 +314,22 @@ fn test_reauthentication_on_403() {
     let reqs = captured.lock().unwrap();
     assert_eq!(reqs.len(), 5, "login + pref + pref(403) + re-login + pref");
     assert!(reqs[0].0.ends_with("/api/v2/auth/login"), "initial login");
-    assert!(reqs[1].0.ends_with("/api/v2/app/setPreferences"), "setPreferences(1111)");
-    assert!(reqs[2].0.ends_with("/api/v2/app/setPreferences"), "setPreferences(2222) → 403");
-    assert!(reqs[3].0.ends_with("/api/v2/auth/login"), "re-login after 403");
-    assert!(reqs[4].0.ends_with("/api/v2/app/setPreferences"), "setPreferences(2222) after re-auth");
+    assert!(
+        reqs[1].0.ends_with("/api/v2/app/setPreferences"),
+        "setPreferences(1111)"
+    );
+    assert!(
+        reqs[2].0.ends_with("/api/v2/app/setPreferences"),
+        "setPreferences(2222) → 403"
+    );
+    assert!(
+        reqs[3].0.ends_with("/api/v2/auth/login"),
+        "re-login after 403"
+    );
+    assert!(
+        reqs[4].0.ends_with("/api/v2/app/setPreferences"),
+        "setPreferences(2222) after re-auth"
+    );
     assert!(
         reqs[4].1.contains("2222"),
         "final setPreferences must carry port 2222, got: {}",

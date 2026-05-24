@@ -124,7 +124,10 @@ fn main() -> Result<()> {
         if let Some(ref path) = cli.port_file
             && let Err(e) = std::fs::write(path, format!("{public_port}\n"))
         {
-            eprintln!("warning: could not write port file {}: {e:#}", path.display());
+            eprintln!(
+                "warning: could not write port file {}: {e:#}",
+                path.display()
+            );
         }
         eprintln!("mapped: private {private_port} → public {public_port} (lifetime {lifetime}s)");
 

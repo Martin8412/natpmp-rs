@@ -83,7 +83,8 @@ pub fn default_gateway() -> Result<Ipv4Addr> {
     msg.hdr.rtm_addrs = libc::RTA_DST;
     msg.hdr.rtm_seq = seq;
     msg.hdr.rtm_pid = pid;
-    msg.dst.sin_len = u8::try_from(std::mem::size_of::<libc::sockaddr_in>()).expect("sockaddr_in fits u8");
+    msg.dst.sin_len =
+        u8::try_from(std::mem::size_of::<libc::sockaddr_in>()).expect("sockaddr_in fits u8");
     msg.dst.sin_family = u8::try_from(libc::AF_INET).expect("AF_INET fits u8");
     // sin_addr = INADDR_ANY (0.0.0.0) — requests the default route
 
@@ -118,8 +119,7 @@ pub fn default_gateway() -> Result<Ipv4Addr> {
         }
 
         // Safety: length checked above; rt_msghdr has no invalid bit patterns.
-        let hdr: libc::rt_msghdr =
-            unsafe { std::ptr::read_unaligned(buf.as_ptr().cast()) };
+        let hdr: libc::rt_msghdr = unsafe { std::ptr::read_unaligned(buf.as_ptr().cast()) };
 
         if hdr.rtm_pid != pid || hdr.rtm_seq != seq {
             continue;
@@ -151,13 +151,15 @@ fn gateway_from_rtaddrs(addrs: libc::c_int, data: &[u8]) -> Result<Ipv4Addr> {
         let sa_len = data[offset] as usize;
 
         if rta_flag == libc::RTA_GATEWAY {
-            let sa_family = if offset + 1 < data.len() { data[offset + 1] } else { 0 };
+            let sa_family = if offset + 1 < data.len() {
+                data[offset + 1]
+            } else {
+                0
+            };
             if sa_family != u8::try_from(libc::AF_INET).expect("AF_INET fits u8") {
                 bail!("default gateway is not IPv4 (sa_family={sa_family})");
             }
-            if sa_len < std::mem::size_of::<libc::sockaddr_in>()
-                || offset + sa_len > data.len()
-            {
+            if sa_len < std::mem::size_of::<libc::sockaddr_in>() || offset + sa_len > data.len() {
                 bail!("RTA_GATEWAY sockaddr is truncated");
             }
             // Safety: bounds checked above; sockaddr_in has no invalid bit patterns.
@@ -232,7 +234,12 @@ pub fn default_gateway() -> Result<Ipv4Addr> {
 
 /// # Errors
 /// Always returns an error — auto-detection is not supported on this platform.
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "freebsd", windows)))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "freebsd",
+    windows
+)))]
 pub fn default_gateway() -> Result<Ipv4Addr> {
     bail!("auto-detection of the default gateway is not supported on this platform; use --gateway")
 }

@@ -92,10 +92,12 @@ impl NatpmpClient {
                     Err(e) if is_timeout(&e) => break,
                     // ConnectionRefused = Linux/macOS ICMP port-unreachable.
                     // ConnectionReset   = Windows WSAECONNRESET (10054) for UDP to a closed port.
-                    Err(e) if matches!(
-                        e.kind(),
-                        io::ErrorKind::ConnectionRefused | io::ErrorKind::ConnectionReset
-                    ) => {
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            io::ErrorKind::ConnectionRefused | io::ErrorKind::ConnectionReset
+                        ) =>
+                    {
                         let gw = self.gateway;
                         bail!(
                             "{gw} is not a NAT-PMP server or the VPN is not connected \
@@ -227,9 +229,13 @@ mod tests {
 
     #[test]
     fn is_timeout_rejects_non_blocking_errors() {
-        assert!(!is_timeout(&io::Error::from(io::ErrorKind::ConnectionRefused)));
+        assert!(!is_timeout(&io::Error::from(
+            io::ErrorKind::ConnectionRefused
+        )));
         assert!(!is_timeout(&io::Error::from(io::ErrorKind::BrokenPipe)));
-        assert!(!is_timeout(&io::Error::from(io::ErrorKind::ConnectionReset)));
+        assert!(!is_timeout(&io::Error::from(
+            io::ErrorKind::ConnectionReset
+        )));
         assert!(!is_timeout(&io::Error::from(io::ErrorKind::Other)));
     }
 
@@ -350,7 +356,10 @@ fn bind_to_interface(socket: &UdpSocket, iface: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos", target_os = "freebsd"))))]
+#[cfg(all(
+    unix,
+    not(any(target_os = "linux", target_os = "macos", target_os = "freebsd"))
+))]
 fn bind_to_interface(_socket: &UdpSocket, iface: &str) -> Result<()> {
     bail!("interface binding is not supported on this platform (requested: {iface})")
 }
@@ -415,8 +424,7 @@ fn interface_ipv4(iface: &str) -> Result<Ipv4Addr> {
                     if !sa_ptr.is_null() {
                         // SOCKADDR pointer may be less aligned than SOCKADDR_IN requires;
                         // read_unaligned avoids undefined behaviour from the cast.
-                        let sa: SOCKADDR_IN =
-                            unsafe { std::ptr::read_unaligned(sa_ptr.cast()) };
+                        let sa: SOCKADDR_IN = unsafe { std::ptr::read_unaligned(sa_ptr.cast()) };
                         if sa.sin_family == AF_INET {
                             let addr = unsafe { sa.sin_addr.S_un.S_addr };
                             return Ok(Ipv4Addr::from(addr.to_ne_bytes()));
